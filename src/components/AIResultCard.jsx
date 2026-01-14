@@ -33,38 +33,29 @@ export default function AIResultCard({
   });
 
   useEffect(() => {
-    const checkAndGenerate = async () => {
-      // Controlla se abbiamo già il risultato in cache
-      const cached = getCachedResult();
+    // Controlla se abbiamo già il risultato in cache
+    const cached = getCachedResult();
 
-      if (cached) {
-        setLoveLetter(cached.loveLetter);
-        setAdvice(cached.advice);
-        setIsGenerating(false);
-        return;
-      }
+    if (cached) {
+      setLoveLetter(cached.loveLetter);
+      setAdvice(cached.advice);
+      setIsGenerating(false);
+      return;
+    }
 
-      // Genera il contenuto (istantaneo con i template!)
-      try {
-        const result = await generateLoveContent(
-          player1Name,
-          player2Name,
-          score,
-          matchingAnswers,
-          differentAnswers
-        );
-        if (result && result.loveLetter) {
-          setLoveLetter(result.loveLetter);
-          setAdvice(result.advice || "");
-        }
-        setIsGenerating(false);
-      } catch (err) {
-        console.error("Errore:", err);
-        setIsGenerating(false);
-      }
-    };
-
-    checkAndGenerate();
+    // Genera il contenuto (istantaneo con i template!)
+    const result = generateLoveContent(
+      player1Name,
+      player2Name,
+      score,
+      matchingAnswers,
+      differentAnswers
+    );
+    if (result && result.loveLetter) {
+      setLoveLetter(result.loveLetter);
+      setAdvice(result.advice || "");
+    }
+    setIsGenerating(false);
   }, []);
 
   // Effetto macchina da scrivere per la lettera

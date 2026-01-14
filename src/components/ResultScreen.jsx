@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import AIResultCard from "./AIResultCard";
 
 export default function ResultScreen({
   score,
@@ -153,6 +154,16 @@ export default function ResultScreen({
           Gioca Ancora 🔄
         </button>
       </div>
+
+      {/* AI Generated Content */}
+      <AIResultCard
+        player1Name={player1Name}
+        player2Name={player2Name}
+        score={score}
+        questions={questions}
+        answersP1={answersP1}
+        answersP2={answersP2}
+      />
 
       <p className="text-xs text-white/60 mt-4">
         Parlatene insieme: dove siete allineati? Dove sorprendete l'altro?

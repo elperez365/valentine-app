@@ -7,8 +7,16 @@ import ResultScreen from "./components/ResultScreen";
 import PassPhoneScreen from "./components/PassPhoneScreen";
 import HistoryScreen from "./components/HistoryScreen";
 import HeartAnimation from "./components/HeartAnimation";
+import AILoadingOverlay from "./components/AILoadingOverlay";
 import { getRandomQuestions } from "./data/questions";
 import { themes, getThemeById } from "./data/themes";
+import {
+  preloadModel,
+  setProgressCallback,
+  getLoadingProgress,
+  preGenerateContent,
+  resetCache,
+} from "./services/aiService";
 
 // LocalStorage helpers
 const HISTORY_KEY = "lovesync_history";
@@ -42,14 +50,27 @@ export default function App() {
   const [timerEnabled, setTimerEnabled] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(10);
   const [currentTheme, setCurrentTheme] = useState("romantic");
+  const [aiLoadingProgress, setAiLoadingProgress] = useState(0);
+  const [showAiLoading, setShowAiLoading] = useState(false);
 
   const clickSound = useMemo(() => new Audio("/sounds/click.mp3"), []);
 
-  // Load history and theme on mount
+  // Load history and theme on mount + preload AI model
   useEffect(() => {
     setHistory(loadHistory());
     const savedTheme = localStorage.getItem(THEME_KEY);
     if (savedTheme) setCurrentTheme(savedTheme);
+
+    // Setup AI progress callback
+    setProgressCallback((progress) => {
+      setAiLoadingProgress(progress);
+      if (progress >= 100) {
+        setTimeout(() => setShowAiLoading(false), 500);
+      }
+    });
+
+    // Preload AI model in background
+    preloadModel();
   }, []);
 
   const theme = getThemeById(currentTheme);
@@ -61,7 +82,20 @@ export default function App() {
     if (step === "p1") {
       setAnswersP1((prev) => [...prev, answer]);
     } else {
-      setAnswersP2((prev) => [...prev, answer]);
+      const newAnswersP2 = [...answersP2, answer];
+      setAnswersP2(newAnswersP2);
+
+      // A metà delle domande del P2, inizia la pre-generazione AI
+      const midPoint = Math.floor(gameQuestions.length / 2);
+      if (currentIndex === midPoint) {
+        preGenerateContent(
+          player1Name,
+          player2Name,
+          answersP1,
+          newAnswersP2,
+          gameQuestions
+        );
+      }
     }
 
     if (currentIndex < gameQuestions.length - 1) {
@@ -108,6 +142,9 @@ export default function App() {
   };
 
   const startGame = (settings) => {
+    // Reset AI cache per nuova partita
+    resetCache();
+
     setPlayer1Name(settings.player1Name);
     setPlayer2Name(settings.player2Name);
     setTimerEnabled(settings.timerEnabled);
@@ -193,7 +230,7 @@ export default function App() {
 
         {step === "p1" && gameQuestions.length > 0 && (
           <QuestionCard
-            key={`p1-${currentIndex}`}
+            key="p1"
             question={gameQuestions[currentIndex]}
             onSelect={handleAnswer}
             player={player1Name}
@@ -215,7 +252,7 @@ export default function App() {
 
         {step === "p2" && gameQuestions.length > 0 && (
           <QuestionCard
-            key={`p2-${currentIndex}`}
+            key="p2"
             question={gameQuestions[currentIndex]}
             onSelect={handleAnswer}
             player={player2Name}
@@ -248,6 +285,12 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* AI Loading Overlay */}
+      <AILoadingOverlay
+        progress={aiLoadingProgress}
+        isVisible={showAiLoading}
+      />
     </div>
   );
 }

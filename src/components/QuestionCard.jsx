@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function QuestionCard({
   question,
@@ -53,7 +53,7 @@ export default function QuestionCard({
       exit={{ opacity: 0, y: -40 }}
       transition={{ duration: 0.35 }}
     >
-      {/* Progress bar */}
+      {/* Progress bar - non si ri-renderizza */}
       <div className="mb-4">
         <div className="flex justify-between text-sm text-white/70 mb-1">
           <span>{player}</span>
@@ -64,9 +64,8 @@ export default function QuestionCard({
         <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden">
           <motion.div
             className="h-full bg-white"
-            initial={{ width: 0 }}
             animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
           />
         </div>
       </div>
@@ -96,21 +95,32 @@ export default function QuestionCard({
         </div>
       )}
 
-      <h2 className="text-2xl font-bold mb-6">{question.text}</h2>
+      {/* Contenuto animato - solo questo cambia */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={question.id}
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          transition={{ duration: 0.2 }}
+        >
+          <h2 className="text-2xl font-bold mb-6">{question.text}</h2>
 
-      <div className="flex flex-col gap-4">
-        {question.options.map((opt, index) => (
-          <motion.button
-            key={index}
-            onClick={() => onSelect(opt)}
-            className="bg-white/95 text-pink-600 py-3 rounded-xl font-semibold shadow hover:bg-white transition w-full"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            {opt}
-          </motion.button>
-        ))}
-      </div>
+          <div className="flex flex-col gap-4">
+            {question.options.map((opt, index) => (
+              <motion.button
+                key={index}
+                onClick={() => onSelect(opt)}
+                className="bg-white/95 text-pink-600 py-3 rounded-xl font-semibold shadow hover:bg-white transition w-full"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {opt}
+              </motion.button>
+            ))}
+          </div>
+        </motion.div>
+      </AnimatePresence>
     </motion.div>
   );
 }

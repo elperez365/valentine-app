@@ -10,8 +10,8 @@ root.render(
   </React.StrictMode>
 );
 
-// registra il service worker in produzione
-if ("serviceWorker" in navigator) {
+// registra il service worker SOLO in produzione
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/service-worker.js")

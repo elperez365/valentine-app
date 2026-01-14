@@ -72,9 +72,8 @@ export default function App() {
       const newAnswersP2 = [...answersP2, answer];
       setAnswersP2(newAnswersP2);
 
-      // A metà delle domande del P2, inizia la pre-generazione AI
-      const midPoint = Math.floor(gameQuestions.length / 2);
-      if (currentIndex === midPoint) {
+      // Alla 5a risposta del P2, inizia la pre-generazione AI
+      if (currentIndex === 4) {
         preGenerateContent(
           player1Name,
           player2Name,
@@ -126,7 +125,6 @@ export default function App() {
 
   const goToSetup = () => {
     setStep("setup");
-  };
   };
 
   const startGame = (settings) => {

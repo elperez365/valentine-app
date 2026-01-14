@@ -49,45 +49,66 @@ let worker = null;
 let isModelReady = false;
 let isModelLoading = false;
 let loadingProgress = 0;
+let loadingStage = "idle";
 let progressCallback = null;
 
 // Cache e stato generazione
 let cachedResult = null;
 let isGenerating = false;
 let pendingGeneration = null;
+let usedFallback = false; // Flag per sapere se abbiamo usato il template
+
+// Crea il worker usando import inline Vite
+import AIWorker from "../workers/aiWorker.js?worker";
 
 // Crea il worker
 const getWorker = () => {
   if (!worker) {
-    worker = new Worker(new URL("../workers/aiWorker.js", import.meta.url), {
-      type: "module",
-    });
+    worker = new AIWorker();
 
     worker.onmessage = (e) => {
-      const { type, progress, result, error, isReady } = e.data;
+      const { type, progress, stage, result, error, isReady } = e.data;
 
       switch (type) {
         case "progress":
           loadingProgress = progress;
-          progressCallback?.(progress);
+          loadingStage = stage || "loading";
+          progressCallback?.(progress, stage);
           break;
 
         case "loaded":
           isModelReady = true;
           isModelLoading = false;
           loadingProgress = 100;
-          progressCallback?.(100);
-          console.log("🧠 Modello AI caricato e pronto!");
+          loadingStage = "ready";
+          progressCallback?.(100, "ready");
+          console.log("🧠 Modelli AI caricati (generatore + traduttore)!");
+          break;
+
+        case "generating":
+          // Aggiorna UI con step corrente
+          console.log(`🔄 Generazione: ${e.data.step}`);
           break;
 
         case "generated":
+          // Ignora se abbiamo già usato il fallback
+          if (usedFallback) {
+            console.log("⏩ AI completata ma già mostrato template, ignoro");
+            isGenerating = false;
+            return;
+          }
           cachedResult = result;
           isGenerating = false;
           if (pendingGeneration) {
             pendingGeneration.resolve(result);
             pendingGeneration = null;
           }
-          console.log("✨ Contenuto AI generato!");
+          console.log("✨ Contenuto AI generato e tradotto!");
+          break;
+
+        case "generate-cancelled":
+          console.log("🛑 Generazione AI cancellata");
+          isGenerating = false;
           break;
 
         case "generate-error":
@@ -97,6 +118,10 @@ const getWorker = () => {
             pendingGeneration.reject(new Error(error));
             pendingGeneration = null;
           }
+          break;
+
+        case "cancelled":
+          console.log("🛑 Operazione AI cancellata");
           break;
 
         case "error":
@@ -122,6 +147,7 @@ export const setProgressCallback = (callback) => {
 };
 
 export const getLoadingProgress = () => loadingProgress;
+export const getLoadingStage = () => loadingStage;
 export const isModelLoadingStatus = () => isModelLoading;
 export const isModelReadyStatus = () => isModelReady;
 export const getCachedResult = () => cachedResult;
@@ -131,6 +157,21 @@ export const resetCache = () => {
   cachedResult = null;
   isGenerating = false;
   pendingGeneration = null;
+  usedFallback = false;
+
+  // Reset anche il flag isCancelled nel worker
+  if (worker) {
+    worker.postMessage({ type: "reset" });
+  }
+};
+
+// Cancella generazione in corso
+export const cancelGeneration = () => {
+  if (worker) {
+    worker.postMessage({ type: "cancel" });
+  }
+  isGenerating = false;
+  pendingGeneration = null;
 };
 
 // Avvia il download del modello (chiamare al setup)
@@ -138,7 +179,7 @@ export const startModelDownload = () => {
   if (isModelReady || isModelLoading) return;
 
   isModelLoading = true;
-  console.log("🚀 Avvio download modello AI in background...");
+  console.log("🚀 Avvio download modelli AI in background...");
 
   const w = getWorker();
   w.postMessage({ type: "load" });
@@ -155,16 +196,10 @@ export const preGenerateContent = (
   // Non generare se già in corso o già fatto
   if (isGenerating || cachedResult) return;
 
-  // Se il modello non è pronto, usa i template
+  // Se il modello non è pronto, non fare nulla qui
+  // Il fallback verrà gestito quando si mostra il risultato
   if (!isModelReady) {
-    console.log("📝 Modello non pronto, userò i template");
-    generateWithTemplates(
-      player1Name,
-      player2Name,
-      currentAnswersP1,
-      currentAnswersP2,
-      questions
-    );
+    console.log("📝 Modello non ancora pronto, genererò dopo");
     return;
   }
 
@@ -277,62 +312,167 @@ export const generateLoveContent = async (
   matchingAnswers,
   differentAnswers
 ) => {
-  // Se abbiamo già il risultato, restituiscilo
+  // Se abbiamo già il risultato (AI o fallback), restituiscilo
   if (cachedResult) {
     return cachedResult;
   }
 
-  // Se stiamo già generando, aspetta
-  if (isGenerating && pendingGeneration) {
-    return pendingGeneration.promise;
-  }
-
-  // Se non stiamo generando e non c'è cache, genera con template
-  if (!isGenerating) {
-    // Fallback template istantaneo
-    let category;
-    if (score === 100) category = "perfect";
-    else if (score >= 70) category = "high";
-    else if (score >= 40) category = "medium";
-    else category = "low";
-
-    const letterTemplate = pickRandom(loveLetterTemplates[category]);
-    const loveLetter = letterTemplate
-      .replace(/{p1}/g, player1Name)
-      .replace(/{p2}/g, player2Name);
-
-    let advice = "";
-    if (differentAnswers.length > 0) {
-      const tips = [];
-      const usedIndexes = new Set();
-      while (tips.length < 2 && usedIndexes.size < adviceTemplates.length) {
-        const idx = Math.floor(Math.random() * adviceTemplates.length);
-        if (!usedIndexes.has(idx)) {
-          usedIndexes.add(idx);
-          tips.push(adviceTemplates[idx]);
+  // Se stiamo già generando, aspetta un po' poi usa fallback
+  if (isGenerating) {
+    return new Promise((resolve) => {
+      // Aspetta max 10 secondi, poi usa template
+      const timeout = setTimeout(() => {
+        if (!cachedResult) {
+          console.log("⏱️ AI non pronta, uso template e cancello generazione");
+          usedFallback = true;
+          cancelGeneration();
+          const fallback = generateFallbackTemplate(
+            player1Name,
+            player2Name,
+            score,
+            differentAnswers
+          );
+          cachedResult = fallback;
+          resolve(fallback);
         }
-      }
-      advice = tips.map((tip, i) => `${i + 1}. ${tip}`).join("\n");
-    }
+      }, 10000);
 
-    cachedResult = { loveLetter, advice };
-    return cachedResult;
+      // Ma se l'AI finisce prima, usa quello
+      const checkInterval = setInterval(() => {
+        if (cachedResult) {
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve(cachedResult);
+        }
+      }, 100);
+    });
   }
 
-  // Aspetta la generazione in corso
-  return new Promise((resolve, reject) => {
-    pendingGeneration = { resolve, reject };
+  // Se modello non pronto e non sta generando, usa template subito
+  if (!isModelReady) {
+    console.log("📝 Modello non pronto, uso template");
+    usedFallback = true;
+    cancelGeneration();
+    const fallback = generateFallbackTemplate(
+      player1Name,
+      player2Name,
+      score,
+      differentAnswers
+    );
+    cachedResult = fallback;
+    return fallback;
+  }
 
-    // Timeout: se dopo 10s non abbiamo risposta, usa template
-    setTimeout(() => {
-      if (pendingGeneration && !cachedResult) {
-        console.log("⏱️ Timeout AI, uso template");
-        generateWithTemplates(player1Name, player2Name, [], [], []);
-        resolve(cachedResult);
-        pendingGeneration = null;
+  // Modello pronto ma non sta generando? Genera ora e aspetta
+  if (!isGenerating) {
+    // Avvia generazione
+    isGenerating = true;
+    const w = getWorker();
+
+    const matchContext =
+      matchingAnswers
+        .map((a) => a.text)
+        .slice(0, 3)
+        .join(", ") || "molte cose";
+    const diffContext =
+      differentAnswers.length > 0
+        ? differentAnswers
+            .map((a) => a.text)
+            .slice(0, 2)
+            .join(", ")
+        : null;
+
+    w.postMessage({
+      type: "generate",
+      payload: {
+        player1Name,
+        player2Name,
+        score,
+        matchContext,
+        diffContext,
+      },
+    });
+
+    // Aspetta risultato con timeout
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        if (!cachedResult) {
+          console.log("⏱️ Timeout generazione, uso template");
+          usedFallback = true;
+          cancelGeneration();
+          const fallback = generateFallbackTemplate(
+            player1Name,
+            player2Name,
+            score,
+            differentAnswers
+          );
+          cachedResult = fallback;
+          resolve(fallback);
+        }
+      }, 15000);
+
+      pendingGeneration = {
+        resolve: (result) => {
+          clearTimeout(timeout);
+          resolve(result);
+        },
+        reject: () => {
+          clearTimeout(timeout);
+          const fallback = generateFallbackTemplate(
+            player1Name,
+            player2Name,
+            score,
+            differentAnswers
+          );
+          cachedResult = fallback;
+          resolve(fallback);
+        },
+      };
+    });
+  }
+
+  // Fallback finale
+  return generateFallbackTemplate(
+    player1Name,
+    player2Name,
+    score,
+    differentAnswers
+  );
+};
+
+// Genera template di fallback
+const generateFallbackTemplate = (
+  player1Name,
+  player2Name,
+  score,
+  differentAnswers
+) => {
+  let category;
+  if (score === 100) category = "perfect";
+  else if (score >= 70) category = "high";
+  else if (score >= 40) category = "medium";
+  else category = "low";
+
+  const letterTemplate = pickRandom(loveLetterTemplates[category]);
+  const loveLetter = letterTemplate
+    .replace(/{p1}/g, player1Name)
+    .replace(/{p2}/g, player2Name);
+
+  let advice = "";
+  if (differentAnswers && differentAnswers.length > 0) {
+    const tips = [];
+    const usedIndexes = new Set();
+    while (tips.length < 2 && usedIndexes.size < adviceTemplates.length) {
+      const idx = Math.floor(Math.random() * adviceTemplates.length);
+      if (!usedIndexes.has(idx)) {
+        usedIndexes.add(idx);
+        tips.push(adviceTemplates[idx]);
       }
-    }, 10000);
-  });
+    }
+    advice = tips.map((tip, i) => `${i + 1}. ${tip}`).join("\n");
+  }
+
+  return { loveLetter, advice };
 };
 
 // Preload (per compatibilità, ora usa startModelDownload)

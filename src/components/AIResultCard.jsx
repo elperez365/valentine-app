@@ -53,8 +53,10 @@ export default function AIResultCard({
           matchingAnswers,
           differentAnswers
         );
-        setLoveLetter(result.loveLetter);
-        setAdvice(result.advice);
+        if (result && result.loveLetter) {
+          setLoveLetter(result.loveLetter);
+          setAdvice(result.advice || "");
+        }
         setIsGenerating(false);
       } catch (err) {
         console.error("Errore:", err);

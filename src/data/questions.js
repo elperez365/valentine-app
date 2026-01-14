@@ -213,6 +213,50 @@ export const questions = [
     options: ["Puntuale", "In ritardo"],
     category: "personalita",
   },
+
+  // Nuove domande
+  {
+    id: 34,
+    text: "Prima colazione dolce o salata?",
+    options: ["Dolce", "Salata"],
+    category: "gusti",
+  },
+  {
+    id: 35,
+    text: "Serata ideale: amici o noi due?",
+    options: ["Con amici", "Solo noi due"],
+    category: "romanticismo",
+  },
+  {
+    id: 36,
+    text: "Sport: praticarlo o guardarlo?",
+    options: ["Praticarlo", "Guardarlo"],
+    category: "quotidiano",
+  },
+  {
+    id: 37,
+    text: "Inverno o Estate?",
+    options: ["Inverno", "Estate"],
+    category: "gusti",
+  },
+  {
+    id: 38,
+    text: "Matrimonio: grande festa o intimo?",
+    options: ["Grande festa", "Cerimonia intima"],
+    category: "futuro",
+  },
+  {
+    id: 39,
+    text: "Sveglia: prima o ultima occasione?",
+    options: ["Al primo suono", "Dopo 10 snooze"],
+    category: "quotidiano",
+  },
+  {
+    id: 40,
+    text: "Social media: attivi o discreti?",
+    options: ["Sempre online", "Discreti"],
+    category: "personalita",
+  },
 ];
 
 // Funzione per ottenere domande random

@@ -5,7 +5,7 @@ import { categories } from "../data/questions";
 export default function SetupScreen({ onStart }) {
   const [player1Name, setPlayer1Name] = useState("");
   const [player2Name, setPlayer2Name] = useState("");
-  const [questionCount, setQuestionCount] = useState(10);
+  const [questionCount, setQuestionCount] = useState(20);
   const [category, setCategory] = useState("all");
   const [timerEnabled, setTimerEnabled] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(10);
@@ -85,15 +85,15 @@ export default function SetupScreen({ onStart }) {
         </label>
         <input
           type="range"
-          min="5"
-          max="20"
+          min="20"
+          max="40"
           value={questionCount}
           onChange={(e) => setQuestionCount(Number(e.target.value))}
           className="w-full accent-white"
         />
         <div className="flex justify-between text-xs text-white/50 mt-1">
-          <span>5</span>
           <span>20</span>
+          <span>40</span>
         </div>
       </div>
 

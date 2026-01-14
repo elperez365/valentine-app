@@ -7,13 +7,10 @@ import ResultScreen from "./components/ResultScreen";
 import PassPhoneScreen from "./components/PassPhoneScreen";
 import HistoryScreen from "./components/HistoryScreen";
 import HeartAnimation from "./components/HeartAnimation";
-import AILoadingOverlay from "./components/AILoadingOverlay";
 import { getRandomQuestions } from "./data/questions";
 import { themes, getThemeById } from "./data/themes";
 import {
-  preloadModel,
-  setProgressCallback,
-  getLoadingProgress,
+  startModelDownload,
   preGenerateContent,
   resetCache,
 } from "./services/aiService";
@@ -50,27 +47,14 @@ export default function App() {
   const [timerEnabled, setTimerEnabled] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(10);
   const [currentTheme, setCurrentTheme] = useState("romantic");
-  const [aiLoadingProgress, setAiLoadingProgress] = useState(0);
-  const [showAiLoading, setShowAiLoading] = useState(false);
 
   const clickSound = useMemo(() => new Audio("/sounds/click.mp3"), []);
 
-  // Load history and theme on mount + preload AI model
+  // Load history and theme on mount
   useEffect(() => {
     setHistory(loadHistory());
     const savedTheme = localStorage.getItem(THEME_KEY);
     if (savedTheme) setCurrentTheme(savedTheme);
-
-    // Setup AI progress callback
-    setProgressCallback((progress) => {
-      setAiLoadingProgress(progress);
-      if (progress >= 100) {
-        setTimeout(() => setShowAiLoading(false), 500);
-      }
-    });
-
-    // Preload AI model in background
-    preloadModel();
   }, []);
 
   const theme = getThemeById(currentTheme);
@@ -139,6 +123,8 @@ export default function App() {
 
   const goToSetup = () => {
     setStep("setup");
+    // Avvia il download del modello AI in background
+    startModelDownload();
   };
 
   const startGame = (settings) => {
@@ -285,12 +271,6 @@ export default function App() {
           />
         )}
       </AnimatePresence>
-
-      {/* AI Loading Overlay */}
-      <AILoadingOverlay
-        progress={aiLoadingProgress}
-        isVisible={showAiLoading}
-      />
     </div>
   );
 }

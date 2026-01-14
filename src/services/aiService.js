@@ -1,7 +1,10 @@
-// Servizio AI con template romantici pre-scritti
-// Veloce, affidabile, sempre in italiano perfetto!
+// Servizio AI con Web Worker + Template fallback
+// L'AI gira in un thread separato, mai blocca la UI!
 
-// Template lettere d'amore basate sul punteggio
+// ============================================
+// TEMPLATE FALLBACK (usati se AI non è pronta)
+// ============================================
+
 const loveLetterTemplates = {
   perfect: [
     "Carissimi {p1} e {p2}, siete davvero anime gemelle! 💕 La vostra connessione è qualcosa di raro e prezioso. Continuate a coltivare questo amore straordinario che vi unisce.",
@@ -25,55 +28,248 @@ const loveLetterTemplates = {
   ],
 };
 
-// Template consigli basati sulle categorie delle differenze
-const adviceTemplates = {
-  generic: [
-    "Dedicate del tempo ogni settimana per parlare apertamente dei vostri desideri e aspettative.",
-    "Provate a mettervi nei panni dell'altro quando avete opinioni diverse - l'empatia è la chiave.",
-    "Celebrate le vostre differenze! Sono ciò che rende la vostra relazione unica e interessante.",
-    "Create dei rituali di coppia che vi appartengano solo a voi due.",
-    "Ricordate che non dovete essere d'accordo su tutto - il rispetto è più importante della conformità.",
-    "Fate delle attività nuove insieme per scoprire interessi comuni che non sapevate di avere.",
-    "Quando discutete, ascoltate per capire, non per rispondere.",
-    "Sorprendetevi a vicenda con piccoli gesti d'affetto quotidiani.",
-  ],
-  lifestyle: [
-    "Trovate un compromesso sulle attività del weekend - alternate tra le preferenze di entrambi.",
-    "Create una routine che rispetti i tempi e gli spazi di entrambi.",
-  ],
-  values: [
-    "Discutete apertamente dei vostri valori e trovate i punti in comune.",
-    "Rispettate le credenze dell'altro anche quando differiscono dalle vostre.",
-  ],
-  future: [
-    "Parlate dei vostri sogni per il futuro e cercate obiettivi condivisi.",
-    "Create un 'vision board' di coppia con i vostri progetti insieme.",
-  ],
-};
+const adviceTemplates = [
+  "Dedicate del tempo ogni settimana per parlare apertamente dei vostri desideri e aspettative.",
+  "Provate a mettervi nei panni dell'altro quando avete opinioni diverse - l'empatia è la chiave.",
+  "Celebrate le vostre differenze! Sono ciò che rende la vostra relazione unica e interessante.",
+  "Create dei rituali di coppia che vi appartengano solo a voi due.",
+  "Ricordate che non dovete essere d'accordo su tutto - il rispetto è più importante della conformità.",
+  "Fate delle attività nuove insieme per scoprire interessi comuni che non sapevate di avere.",
+  "Quando discutete, ascoltate per capire, non per rispondere.",
+  "Sorprendetevi a vicenda con piccoli gesti d'affetto quotidiani.",
+];
 
-// Cache e stato
+const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// ============================================
+// WEB WORKER MANAGEMENT
+// ============================================
+
+let worker = null;
+let isModelReady = false;
+let isModelLoading = false;
+let loadingProgress = 0;
+let progressCallback = null;
+
+// Cache e stato generazione
 let cachedResult = null;
 let isGenerating = false;
+let pendingGeneration = null;
 
+// Crea il worker
+const getWorker = () => {
+  if (!worker) {
+    worker = new Worker(new URL("../workers/aiWorker.js", import.meta.url), {
+      type: "module",
+    });
+
+    worker.onmessage = (e) => {
+      const { type, progress, result, error, isReady } = e.data;
+
+      switch (type) {
+        case "progress":
+          loadingProgress = progress;
+          progressCallback?.(progress);
+          break;
+
+        case "loaded":
+          isModelReady = true;
+          isModelLoading = false;
+          loadingProgress = 100;
+          progressCallback?.(100);
+          console.log("🧠 Modello AI caricato e pronto!");
+          break;
+
+        case "generated":
+          cachedResult = result;
+          isGenerating = false;
+          if (pendingGeneration) {
+            pendingGeneration.resolve(result);
+            pendingGeneration = null;
+          }
+          console.log("✨ Contenuto AI generato!");
+          break;
+
+        case "generate-error":
+          console.error("Errore generazione AI:", error);
+          isGenerating = false;
+          if (pendingGeneration) {
+            pendingGeneration.reject(new Error(error));
+            pendingGeneration = null;
+          }
+          break;
+
+        case "error":
+          console.error("Errore caricamento modello:", error);
+          isModelLoading = false;
+          break;
+
+        case "already-loading":
+          // Ignora, già in caricamento
+          break;
+      }
+    };
+  }
+  return worker;
+};
+
+// ============================================
+// API PUBBLICA
+// ============================================
+
+export const setProgressCallback = (callback) => {
+  progressCallback = callback;
+};
+
+export const getLoadingProgress = () => loadingProgress;
+export const isModelLoadingStatus = () => isModelLoading;
+export const isModelReadyStatus = () => isModelReady;
 export const getCachedResult = () => cachedResult;
 export const isCurrentlyGenerating = () => isGenerating;
 
 export const resetCache = () => {
   cachedResult = null;
   isGenerating = false;
+  pendingGeneration = null;
 };
 
-// Funzioni placeholder per compatibilità (non servono più con i template)
-export const setProgressCallback = () => {};
-export const getLoadingProgress = () => 100;
-export const isModelLoading = () => false;
-export const getLoadError = () => null;
-export const preloadModel = () => {};
+// Avvia il download del modello (chiamare al setup)
+export const startModelDownload = () => {
+  if (isModelReady || isModelLoading) return;
 
-// Seleziona un template casuale
-const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  isModelLoading = true;
+  console.log("🚀 Avvio download modello AI in background...");
 
-// Genera contenuti (istantaneo con i template!)
+  const w = getWorker();
+  w.postMessage({ type: "load" });
+};
+
+// Pre-genera il contenuto (chiamare a metà domande P2)
+export const preGenerateContent = (
+  player1Name,
+  player2Name,
+  currentAnswersP1,
+  currentAnswersP2,
+  questions
+) => {
+  // Non generare se già in corso o già fatto
+  if (isGenerating || cachedResult) return;
+
+  // Se il modello non è pronto, usa i template
+  if (!isModelReady) {
+    console.log("📝 Modello non pronto, userò i template");
+    generateWithTemplates(
+      player1Name,
+      player2Name,
+      currentAnswersP1,
+      currentAnswersP2,
+      questions
+    );
+    return;
+  }
+
+  console.log("🤖 Inizio generazione AI...");
+  isGenerating = true;
+
+  // Calcola contesto
+  const answeredCount = Math.min(
+    currentAnswersP1.length,
+    currentAnswersP2.length
+  );
+  let matches = 0;
+  const matchingTopics = [];
+  const differentTopics = [];
+
+  for (let i = 0; i < answeredCount; i++) {
+    if (currentAnswersP1[i] === currentAnswersP2[i]) {
+      matches++;
+      matchingTopics.push(questions[i].text);
+    } else {
+      differentTopics.push(questions[i].text);
+    }
+  }
+
+  // Stima punteggio
+  const totalQuestions = questions.length;
+  const remaining = totalQuestions - answeredCount;
+  const estimatedMatches = matches + Math.floor(remaining * 0.5);
+  const estimatedScore = Math.round((estimatedMatches / totalQuestions) * 100);
+
+  // Invia al worker
+  const w = getWorker();
+  w.postMessage({
+    type: "generate",
+    payload: {
+      player1Name,
+      player2Name,
+      score: estimatedScore,
+      matchContext: matchingTopics.slice(0, 3).join(", ") || "molte cose",
+      diffContext: differentTopics.slice(0, 2).join(", ") || null,
+    },
+  });
+};
+
+// Genera con template (fallback istantaneo)
+const generateWithTemplates = (
+  player1Name,
+  player2Name,
+  currentAnswersP1,
+  currentAnswersP2,
+  questions
+) => {
+  isGenerating = true;
+
+  const answeredCount = Math.min(
+    currentAnswersP1.length,
+    currentAnswersP2.length
+  );
+  let matches = 0;
+  let hasDifferences = false;
+
+  for (let i = 0; i < answeredCount; i++) {
+    if (currentAnswersP1[i] === currentAnswersP2[i]) {
+      matches++;
+    } else {
+      hasDifferences = true;
+    }
+  }
+
+  const totalQuestions = questions.length;
+  const remaining = totalQuestions - answeredCount;
+  const estimatedMatches = matches + Math.floor(remaining * 0.5);
+  const score = Math.round((estimatedMatches / totalQuestions) * 100);
+
+  // Scegli template
+  let category;
+  if (score === 100) category = "perfect";
+  else if (score >= 70) category = "high";
+  else if (score >= 40) category = "medium";
+  else category = "low";
+
+  const letterTemplate = pickRandom(loveLetterTemplates[category]);
+  const loveLetter = letterTemplate
+    .replace(/{p1}/g, player1Name)
+    .replace(/{p2}/g, player2Name);
+
+  let advice = "";
+  if (hasDifferences) {
+    const tips = [];
+    const usedIndexes = new Set();
+    while (tips.length < 2 && usedIndexes.size < adviceTemplates.length) {
+      const idx = Math.floor(Math.random() * adviceTemplates.length);
+      if (!usedIndexes.has(idx)) {
+        usedIndexes.add(idx);
+        tips.push(adviceTemplates[idx]);
+      }
+    }
+    advice = tips.map((tip, i) => `${i + 1}. ${tip}`).join("\n");
+  }
+
+  cachedResult = { loveLetter, advice };
+  isGenerating = false;
+};
+
+// Genera contenuto (attende il risultato)
 export const generateLoveContent = async (
   player1Name,
   player2Name,
@@ -86,108 +282,60 @@ export const generateLoveContent = async (
     return cachedResult;
   }
 
-  isGenerating = true;
-
-  // Simula un breve delay per l'effetto "generazione"
-  await new Promise((resolve) => setTimeout(resolve, 800));
-
-  // Scegli il template giusto in base al punteggio
-  let templateCategory;
-  if (score === 100) {
-    templateCategory = "perfect";
-  } else if (score >= 70) {
-    templateCategory = "high";
-  } else if (score >= 40) {
-    templateCategory = "medium";
-  } else {
-    templateCategory = "low";
+  // Se stiamo già generando, aspetta
+  if (isGenerating && pendingGeneration) {
+    return pendingGeneration.promise;
   }
 
-  // Genera la lettera
-  const letterTemplate = pickRandom(loveLetterTemplates[templateCategory]);
-  const loveLetter = letterTemplate
-    .replace(/{p1}/g, player1Name)
-    .replace(/{p2}/g, player2Name);
+  // Se non stiamo generando e non c'è cache, genera con template
+  if (!isGenerating) {
+    // Fallback template istantaneo
+    let category;
+    if (score === 100) category = "perfect";
+    else if (score >= 70) category = "high";
+    else if (score >= 40) category = "medium";
+    else category = "low";
 
-  // Genera i consigli (2 consigli casuali)
-  let advice = "";
-  if (differentAnswers.length > 0) {
-    const tips = [];
-    const usedIndexes = new Set();
+    const letterTemplate = pickRandom(loveLetterTemplates[category]);
+    const loveLetter = letterTemplate
+      .replace(/{p1}/g, player1Name)
+      .replace(/{p2}/g, player2Name);
 
-    while (
-      tips.length < 2 &&
-      usedIndexes.size < adviceTemplates.generic.length
-    ) {
-      const idx = Math.floor(Math.random() * adviceTemplates.generic.length);
-      if (!usedIndexes.has(idx)) {
-        usedIndexes.add(idx);
-        tips.push(adviceTemplates.generic[idx]);
+    let advice = "";
+    if (differentAnswers.length > 0) {
+      const tips = [];
+      const usedIndexes = new Set();
+      while (tips.length < 2 && usedIndexes.size < adviceTemplates.length) {
+        const idx = Math.floor(Math.random() * adviceTemplates.length);
+        if (!usedIndexes.has(idx)) {
+          usedIndexes.add(idx);
+          tips.push(adviceTemplates[idx]);
+        }
       }
+      advice = tips.map((tip, i) => `${i + 1}. ${tip}`).join("\n");
     }
 
-    advice = tips.map((tip, i) => `${i + 1}. ${tip}`).join("\n");
+    cachedResult = { loveLetter, advice };
+    return cachedResult;
   }
 
-  cachedResult = {
-    loveLetter,
-    advice,
-  };
+  // Aspetta la generazione in corso
+  return new Promise((resolve, reject) => {
+    pendingGeneration = { resolve, reject };
 
-  isGenerating = false;
-  return cachedResult;
+    // Timeout: se dopo 10s non abbiamo risposta, usa template
+    setTimeout(() => {
+      if (pendingGeneration && !cachedResult) {
+        console.log("⏱️ Timeout AI, uso template");
+        generateWithTemplates(player1Name, player2Name, [], [], []);
+        resolve(cachedResult);
+        pendingGeneration = null;
+      }
+    }, 10000);
+  });
 };
 
-// Pre-genera i contenuti (da chiamare a metà quiz)
-export const preGenerateContent = (
-  player1Name,
-  player2Name,
-  currentAnswersP1,
-  currentAnswersP2,
-  questions
-) => {
-  // Non pre-generare se stiamo già generando o abbiamo già il risultato
-  if (isGenerating || cachedResult) return;
-
-  // Calcola il punteggio parziale
-  let matches = 0;
-  const answeredCount = Math.min(
-    currentAnswersP1.length,
-    currentAnswersP2.length
-  );
-
-  for (let i = 0; i < answeredCount; i++) {
-    if (currentAnswersP1[i] === currentAnswersP2[i]) matches++;
-  }
-
-  // Stima il punteggio finale
-  const totalQuestions = questions.length;
-  const remaining = totalQuestions - answeredCount;
-  const estimatedMatches = matches + Math.floor(remaining * 0.5);
-  const estimatedScore = Math.round((estimatedMatches / totalQuestions) * 100);
-
-  // Prepara le risposte
-  const matchingAnswers = [];
-  const differentAnswers = [];
-
-  for (let i = 0; i < answeredCount; i++) {
-    if (currentAnswersP1[i] === currentAnswersP2[i]) {
-      matchingAnswers.push({ ...questions[i], answer: currentAnswersP1[i] });
-    } else {
-      differentAnswers.push({
-        ...questions[i],
-        answerP1: currentAnswersP1[i],
-        answerP2: currentAnswersP2[i],
-      });
-    }
-  }
-
-  // Genera in background (istantaneo con i template)
-  generateLoveContent(
-    player1Name,
-    player2Name,
-    estimatedScore,
-    matchingAnswers,
-    differentAnswers
-  ).catch(console.error);
+// Preload (per compatibilità, ora usa startModelDownload)
+export const preloadModel = () => {
+  startModelDownload();
 };

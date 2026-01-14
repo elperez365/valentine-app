@@ -50,11 +50,14 @@ export default function App() {
 
   const clickSound = useMemo(() => new Audio("/sounds/click.mp3"), []);
 
-  // Load history and theme on mount
+  // Load history and theme on mount + start AI download immediately
   useEffect(() => {
     setHistory(loadHistory());
     const savedTheme = localStorage.getItem(THEME_KEY);
     if (savedTheme) setCurrentTheme(savedTheme);
+
+    // Avvia subito il download del modello AI
+    startModelDownload();
   }, []);
 
   const theme = getThemeById(currentTheme);
@@ -123,8 +126,7 @@ export default function App() {
 
   const goToSetup = () => {
     setStep("setup");
-    // Avvia il download del modello AI in background
-    startModelDownload();
+  };
   };
 
   const startGame = (settings) => {
